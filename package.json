@@ -6,13 +6,23 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "deploy": "npx expo export:web && firebase deploy"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~54.0.26",
+    "expo-blur": "~15.0.7",
+    "expo-linear-gradient": "~15.0.7",
     "expo-status-bar": "~3.0.8",
+    "firebase": "^12.7.0",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "react-native-dotenv": "^3.4.11",
+    "react-native-svg": "15.12.1"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "babel-preset-expo": "^54.0.9"
+  }
 }
