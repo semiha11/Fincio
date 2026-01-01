@@ -13,6 +13,59 @@ const CACHE_KEYS = {
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 dakika
 
+// ============ CACHE YARDIMCI FONKSİYONLARI ============
+const getCache = async (key) => {
+    try {
+        const cached = await AsyncStorage.getItem(key);
+        if (!cached) return null;
+
+        const { data, timestamp } = JSON.parse(cached);
+        const isExpired = Date.now() - timestamp > CACHE_DURATION;
+
+        return isExpired ? null : data;
+    } catch (error) {
+        console.warn('Cache read error:', error);
+        return null;
+    }
+};
+
+const setCache = async (key, data) => {
+    try {
+        const cacheItem = JSON.stringify({ data, timestamp: Date.now() });
+        await AsyncStorage.setItem(key, cacheItem);
+    } catch (error) {
+        console.warn('Cache write error:', error);
+    }
+};
+
+// ============ API ÇAĞRISI ============
+const fetchAPI = async (endpoint, cacheKey) => {
+    try {
+        const response = await fetch(`${BASE_URL}${endpoint}`, {
+            method: 'GET',
+            headers: {
+                'content-type': 'application/json',
+                'authorization': API_KEY
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const json = await response.json();
+
+        if (json.success && json.result) {
+            return { success: true, data: json.result };
+        }
+
+        return { success: false, error: 'Invalid response format' };
+    } catch (error) {
+        console.warn(`API Error (${endpoint}):`, error.message);
+        return { success: false, error: error.message };
+    }
+};
+
 // ============ YEDEK VERİ (API çöktüğünde kullanılır) ============
 // ============ ALTIN FİYATLARI ============
 export const getGoldPrices = async () => {

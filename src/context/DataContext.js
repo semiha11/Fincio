@@ -1,7 +1,8 @@
-import React, { createContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { COLORS } from '../constants/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as firestoreService from '../services/firestoreService';
+import * as financeApi from '../services/financeApi';
 
 export const DataContext = createContext();
 
@@ -43,6 +44,10 @@ export const DataProvider = ({ children, userId }) => {
         debts: 0
     });
 
+    // --- Live Prices for Investments ---
+    const [livePrices, setLivePrices] = useState({ gold: [], exchange: [], crypto: [], stocks: [] });
+    const [investmentsTotalValue, setInvestmentsTotalValue] = useState(0);
+
     // --- Detailed Debt Management ---
     const [debtsList, setDebtsList] = useState([]);
 
@@ -55,11 +60,12 @@ export const DataProvider = ({ children, userId }) => {
             .filter(d => d.status === 'active' || !d.status)
             .reduce((sum, debt) => sum + debt.remainingAmount, 0);
 
+        // Net Worth = Nakit + Yatırımlar - Borçlar
         return {
             totalDebts: calculatedTotalDebts,
-            netWorth: financialData.assets - calculatedTotalDebts
+            netWorth: financialData.assets + investmentsTotalValue - calculatedTotalDebts
         };
-    }, [debtsList, financialData.assets]);
+    }, [debtsList, financialData.assets, investmentsTotalValue]);
 
     // Sync calculated debts back to financialData structure only if needed for consumers expecting 'financialData' object
     // But ideally consumers should use 'netWorth' and 'totalDebts' directly.
@@ -70,13 +76,32 @@ export const DataProvider = ({ children, userId }) => {
         netWorth: netWorth
     }), [financialData, totalDebts, netWorth]);
 
-    const addDebt = useCallback((debt) => {
-        setDebtsList(prev => [...prev, { ...debt, id: Date.now(), status: 'active' }]);
-    }, []);
+    const addDebt = useCallback(async (debt) => {
+        const newDebt = { ...debt, id: Date.now(), status: 'active' };
+        setDebtsList(prev => [...prev, newDebt]);
 
-    const deleteDebt = useCallback((id) => {
+        // Sync to Firebase
+        if (userId) {
+            try {
+                await firestoreService.addDebt(userId, newDebt);
+            } catch (error) {
+                console.error('Error syncing debt to Firebase:', error);
+            }
+        }
+    }, [userId]);
+
+    const deleteDebt = useCallback(async (id) => {
         setDebtsList(prev => prev.filter(debt => debt.id !== id));
-    }, []);
+
+        // Sync to Firebase
+        if (userId) {
+            try {
+                await firestoreService.deleteDebt(userId, id.toString());
+            } catch (error) {
+                console.error('Error deleting debt from Firebase:', error);
+            }
+        }
+    }, [userId]);
 
     const updateFinancialData = useCallback((newData) => {
         setFinancialData(prev => ({ ...prev, ...newData }));
@@ -247,6 +272,91 @@ export const DataProvider = ({ children, userId }) => {
             setFincioScore(0);
         }
     }, [startDate, isLoaded]);
+
+    // ============ LIVE PRICES & INVESTMENT VALUE ============
+    // Helper function to get live price for an asset
+    const getLivePriceForAsset = useCallback((asset, priceData) => {
+        if (!priceData) return asset.currentPrice || 0;
+
+        const assetName = (asset.name || '').toLowerCase();
+        const assetType = asset.type || '';
+
+        // Gold prices
+        if (assetType === 'gold' || assetName.includes('altın') || assetName.includes('gold')) {
+            const goldItem = priceData.gold?.find(g =>
+                g.name?.toLowerCase().includes('gram') ||
+                assetName.includes(g.name?.toLowerCase())
+            );
+            if (goldItem) return parseFloat(goldItem.buying || goldItem.selling || 0);
+        }
+
+        // Currency prices
+        if (assetType === 'currency' || assetName.includes('dolar') || assetName.includes('euro')) {
+            const currencyCode = assetName.includes('euro') ? 'EUR' : 'USD';
+            const currencyItem = priceData.exchange?.find(c => c.code === currencyCode);
+            if (currencyItem) return parseFloat(currencyItem.buying || 0);
+        }
+
+        // Crypto prices
+        if (assetType === 'crypto' || assetName.includes('bitcoin') || assetName.includes('btc')) {
+            const cryptoItem = priceData.crypto?.find(c =>
+                c.code?.toLowerCase() === 'btc' ||
+                c.name?.toLowerCase().includes('bitcoin')
+            );
+            if (cryptoItem) return parseFloat(cryptoItem.price || 0);
+        }
+
+        // Stock prices
+        if (assetType === 'stock') {
+            const stockItem = priceData.stocks?.find(s =>
+                assetName.includes(s.code?.toLowerCase()) ||
+                assetName.includes(s.text?.toLowerCase())
+            );
+            if (stockItem) return parseFloat(stockItem.lastprice || 0);
+        }
+
+        return asset.currentPrice || 0;
+    }, []);
+
+    // Fetch live prices and calculate investment value
+    useEffect(() => {
+        let isMounted = true;
+
+        const fetchAndCalculate = async () => {
+            try {
+                const data = await financeApi.getAllFinanceData();
+                if (!isMounted) return;
+
+                setLivePrices(data);
+
+                // Calculate total investment value
+                const totalValue = assets.reduce((sum, asset) => {
+                    const livePrice = getLivePriceForAsset(asset, data);
+                    const amountStr = asset.amount ? asset.amount.toString() : '1';
+                    const quantity = parseFloat(amountStr.replace(/[^0-9.]/g, '')) || 1;
+                    return sum + (quantity * livePrice);
+                }, 0);
+
+                setInvestmentsTotalValue(totalValue);
+            } catch (error) {
+                console.warn('Error fetching live prices:', error);
+            }
+        };
+
+        if (isLoaded) {
+            fetchAndCalculate();
+            // Refresh every 5 minutes
+            const interval = setInterval(fetchAndCalculate, 5 * 60 * 1000);
+            return () => {
+                isMounted = false;
+                clearInterval(interval);
+            };
+        }
+    }, [assets, isLoaded, getLivePriceForAsset]);
+
+    // NOTE: Firebase real-time subscription disabled to prevent overwriting local state
+    // Initial sync is handled by syncFromFirestore useEffect above
+    // addAsset now writes to Firebase, so data stays in sync
 
     const exchangeRates = {
         TRY: 1,
@@ -568,38 +678,83 @@ export const DataProvider = ({ children, userId }) => {
         }
     }, [userId]);
 
-    const updateIncome = useCallback((item) => {
+    const updateIncome = useCallback(async (item) => {
         if (item.type === 'regular') {
             setRegularIncome(prev => prev.map(i => i.id === item.id ? item : i));
         } else {
             setIrregularIncome(prev => prev.map(i => i.id === item.id ? item : i));
         }
-    }, []);
 
-    const deleteIncome = useCallback((id, type) => {
+        // Sync to Firebase
+        if (userId) {
+            try {
+                await firestoreService.updateIncome(userId, item.id.toString(), item, item.type);
+            } catch (error) {
+                console.error('Error updating income in Firebase:', error);
+            }
+        }
+    }, [userId]);
+
+    const deleteIncome = useCallback(async (id, type) => {
         if (type === 'regular') {
             setRegularIncome(prev => prev.filter(i => i.id !== id));
         } else {
             setIrregularIncome(prev => prev.filter(i => i.id !== id));
         }
-    }, []);
+
+        // Sync to Firebase
+        if (userId) {
+            try {
+                await firestoreService.deleteIncome(userId, id.toString(), type);
+            } catch (error) {
+                console.error('Error deleting income from Firebase:', error);
+            }
+        }
+    }, [userId]);
 
     const updateBudget = useCallback((item) => {
         setBudgets(prev => prev.map(b => b.id === item.id ? item : b));
     }, []);
 
-    const addGoal = useCallback((item) => {
+    const addGoal = useCallback(async (item) => {
         const newItem = { ...item, id: Date.now(), color: COLORS.accentBlue };
         setGoals(prev => [...prev, newItem]);
-    }, []);
 
-    const updateGoal = useCallback((item) => {
+        // Sync to Firebase
+        if (userId) {
+            try {
+                await firestoreService.addGoal(userId, newItem);
+            } catch (error) {
+                console.error('Error syncing goal to Firebase:', error);
+            }
+        }
+    }, [userId]);
+
+    const updateGoal = useCallback(async (item) => {
         setGoals(prev => prev.map(g => g.id === item.id ? item : g));
-    }, []);
 
-    const deleteGoal = useCallback((id) => {
+        // Sync to Firebase
+        if (userId) {
+            try {
+                await firestoreService.updateGoal(userId, item.id.toString(), item);
+            } catch (error) {
+                console.error('Error updating goal in Firebase:', error);
+            }
+        }
+    }, [userId]);
+
+    const deleteGoal = useCallback(async (id) => {
         setGoals(prev => prev.filter(g => g.id !== id));
-    }, []);
+
+        // Sync to Firebase
+        if (userId) {
+            try {
+                await firestoreService.deleteGoal(userId, id.toString());
+            } catch (error) {
+                console.error('Error deleting goal from Firebase:', error);
+            }
+        }
+    }, [userId]);
 
     const updateRule = useCallback((rule) => {
         setPayYourselfRule(rule);
@@ -617,17 +772,45 @@ export const DataProvider = ({ children, userId }) => {
         setAccounts(prev => prev.filter(a => a.id !== id));
     }, []);
 
-    const addAsset = useCallback((asset) => {
-        setAssets(prev => [...prev, { ...asset, id: Date.now() }]);
-    }, []);
+    const addAsset = useCallback(async (asset) => {
+        const newAsset = { ...asset, id: Date.now() };
+        setAssets(prev => [...prev, newAsset]);
 
-    const updateAsset = useCallback((asset) => {
+        // Sync to Firebase
+        if (userId) {
+            try {
+                await firestoreService.addAsset(userId, newAsset);
+            } catch (error) {
+                console.error('Error syncing asset to Firebase:', error);
+            }
+        }
+    }, [userId]);
+
+    const updateAsset = useCallback(async (asset) => {
         setAssets(prev => prev.map(a => a.id === asset.id ? asset : a));
-    }, []);
 
-    const deleteAsset = useCallback((id) => {
+        // Sync to Firebase
+        if (userId) {
+            try {
+                await firestoreService.updateAsset(userId, asset.id.toString(), asset);
+            } catch (error) {
+                console.error('Error updating asset in Firebase:', error);
+            }
+        }
+    }, [userId]);
+
+    const deleteAsset = useCallback(async (id) => {
         setAssets(prev => prev.filter(a => a.id !== id));
-    }, []);
+
+        // Sync to Firebase
+        if (userId) {
+            try {
+                await firestoreService.deleteAsset(userId, id.toString());
+            } catch (error) {
+                console.error('Error deleting asset from Firebase:', error);
+            }
+        }
+    }, [userId]);
 
     const updateAssetAmount = useCallback((id, changeAmount, operation) => {
         setAssets(prev => prev.map(asset => {
@@ -838,7 +1021,9 @@ export const DataProvider = ({ children, userId }) => {
         deleteDebt,
         payOffDebt, // Using the implemented useCallback one
         resetAllFinancialData,
-        fincioScore // Exposed Score
+        fincioScore, // Exposed Score
+        livePrices, // Live market prices
+        investmentsTotalValue // Total value of all investments
     }), [
         isLoaded,
         currentScreen,
@@ -864,7 +1049,9 @@ export const DataProvider = ({ children, userId }) => {
         extraPayments,
         activeFinancialData,
         debtsList,
-        fincioScore // Dependency
+        fincioScore,
+        livePrices,
+        investmentsTotalValue
     ]);
 
 

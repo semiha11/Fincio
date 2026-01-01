@@ -355,6 +355,20 @@ export const deleteAsset = async (userId, assetId) => {
     }
 };
 
+// Real-time listener for assets
+export const subscribeToAssets = (userId, callback) => {
+    const collectionRef = collection(db, 'users', userId, 'assets');
+    return onSnapshot(collectionRef, (snapshot) => {
+        const assets = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+        callback(assets);
+    }, (error) => {
+        console.error('Error in assets subscription:', error);
+    });
+};
+
 // ============ GOALS ============
 
 export const addGoal = async (userId, goal) => {

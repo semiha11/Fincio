@@ -28,15 +28,13 @@ Güvenli ve ölçeklenebilir bir backend yapısı:
 
 ## 📱 Ekran Görüntüleri (Screenshots)
 
-| Ana Sayfa | Portföy & Yatırımlar | Profil & Ayarlar |
-|:---:|:---:|:---:|
-| <!-- Ana Sayfa Ekran Görüntüsü --> ![Home](docs/home.png) | <!-- Yatırımlar --> ![Investments](docs/investments.png) | <!-- Profil --> ![Profile](docs/profile.png) |
-
-| İstatistikler | Giriş Ekranı |
+| Ana Sayfa | Portföy & Yatırımlar |
 |:---:|:---:|
-| <!-- İstatistikler --> ![Stats](docs/stats.png) | <!-- Login --> ![Login](docs/login.png) |
+| ![Home](docs/IMG_9646.PNG) | ![Investments](docs/IMG_9647.PNG) |
 
-*(Not: Ekran görüntülerini `docs` klasörüne ekleyerek bu alanları güncelleyebilirsiniz.)*
+| Gelir & Gider | Profil & Ayarlar |
+|:---:|:---:|
+| ![Income](docs/IMG_9648.PNG) | ![Profile](docs/IMG_9649.PNG) |
 
 ---
 
