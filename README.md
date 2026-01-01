@@ -40,7 +40,16 @@ Güvenli ve ölçeklenebilir bir backend yapısı:
 
 ---
 
-## 🛠️ Kurulum ve Çalıştırma
+## � Uygulamayı Test Edin
+Bu projeyi canlı olarak denemek için telefonunuza **Expo Go** uygulamasını indirin ve aşağıdaki QR kodu taratın:
+
+![Expo QR Code](docs/expo-qr-code.png)
+
+> **Not:** QR kodun çalışması için geliştirici sunucusunun aktif olması gerekir.
+
+---
+
+## �🛠️ Kurulum ve Çalıştırma
 
 Projeyi yerel ortamınızda çalıştırmak için aşağıdaki adımları izleyin.
 
